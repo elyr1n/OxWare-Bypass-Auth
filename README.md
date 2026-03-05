@@ -1,4 +1,4 @@
-# Oxware-Bypass-Auth
+# OxWare-Bypass-Auth
 
 ---
 
