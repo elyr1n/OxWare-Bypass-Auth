@@ -26,23 +26,20 @@ headers = {
 
 
 def get_captcha_text():
-    response_captcha = session.get("https://oxware.ru/captcha.php", headers=headers)
-
-    if response_captcha.status_code == 200:
+    try:
+        response_captcha = session.get("https://oxware.ru/captcha.php", headers=headers)
         logging.info("Получаю капчу...")
 
         with open("captcha.png", "wb") as f:
             f.write(response_captcha.content)
-    else:
-        logging.error(
-            f"Не смог получить капчу. Статус код ошибки: {response_captcha.status_code}"
-        )
+    except Exception as e:
+        logging.error(f"Произошла ошибка: {e}")
         exit()
 
     img = cv2.imread("captcha.png")
-    img = cv2.resize(img, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+    img = cv2.resize(img, None, fx=5, fy=5, interpolation=cv2.INTER_CUBIC)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 120, 255, cv2.THRESH_BINARY)
+    _, thresh = cv2.threshold(gray, 115, 255, cv2.THRESH_BINARY)
     thresh = cv2.bitwise_not(thresh)
     cv2.imwrite("captcha_text.png", thresh)
 
@@ -58,46 +55,54 @@ def get_captcha_text():
     return captcha
 
 
-def main():
-    session.get("https://oxware.ru/", headers=headers)
+def get_csrf_token():
+    try:
+        csrf_response = session.get("https://oxware.ru/login.php", headers=headers)
+        logging.info("Получаю CSRF-Токен...")
 
-    csrf_response = session.get("https://oxware.ru/login.php", headers=headers)
-    logging.info("Получаю CSRF-Токен...")
+        csrf_token = re.search(
+            r'name="csrf" value="([a-z0-9]+)"', csrf_response.text
+        ).group(1)
 
-    csrf_token = re.search(
-        r'name="csrf" value="([a-z0-9]+)"', csrf_response.text
-    ).group(1)
-    logging.info(f"CSRF-Токен получен: {csrf_token}")
+        logging.info(f"CSRF-Токен получен: {csrf_token}")
+    except Exception as e:
+        logging.error(f"Произошла ошибка: {e}")
+        exit()
 
+    return csrf_token
+
+
+def login_account():
     data = {
-        "csrf": csrf_token,
+        "csrf": get_csrf_token(),
         "username": username,
         "password": password,
         "captcha": get_captcha_text(),
     }
 
-    response_login = session.post(
-        "https://oxware.ru/login.php", headers=headers, data=data
-    )
-
-    messages = [
-        "Invalid captcha",
-        "Invalid username or password",
-        "Session expired. Refresh the page and try again.",
-    ]
-
-    for message in messages:
-        if message in response_login.text:
-            logging.info(message)
-            break
-    else:
-        logging.info(
-            "Успешно вошли в аккаунт, обходя методы защиты - получение CSRF-Токена, получение капчи с фото!"
+    try:
+        response_login = session.post(
+            "https://oxware.ru/login.php", headers=headers, data=data
         )
+
+        messages = [
+            "Invalid captcha",
+            "Invalid username or password",
+            "Session expired. Refresh the page and try again.",
+        ]
+
+        for message in messages:
+            if message in response_login.text:
+                logging.error(message)
+                break
+        else:
+            logging.info(
+                "Успешно вошли в аккаунт, обходя методы защиты - получение CSRF-Токена, получение капчи с фото!"
+            )
+    except Exception as e:
+        logging.error(f"Произошла ошибка: {e}")
+        exit()
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        pass
+    login_account()

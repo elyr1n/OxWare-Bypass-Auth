@@ -30,23 +30,20 @@ headers = {
 
 
 def get_captcha_text():
-    response_captcha = session.get("https://oxware.ru/captcha.php", headers=headers)
-
-    if response_captcha.status_code == 200:
+    try:
+        response_captcha = session.get("https://oxware.ru/captcha.php", headers=headers)
         logging.info("Получаю капчу...")
 
         with open("captcha.png", "wb") as f:
             f.write(response_captcha.content)
-    else:
-        logging.error(
-            f"Не смог получить капчу. Статус код ошибки: {response_captcha.status_code}"
-        )
+    except Exception as e:
+        logging.error(f"Произошла ошибка: {e}")
         exit()
 
     img = cv2.imread("captcha.png")
-    img = cv2.resize(img, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+    img = cv2.resize(img, None, fx=5, fy=5, interpolation=cv2.INTER_CUBIC)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 120, 255, cv2.THRESH_BINARY)
+    _, thresh = cv2.threshold(gray, 115, 255, cv2.THRESH_BINARY)
     thresh = cv2.bitwise_not(thresh)
     cv2.imwrite("captcha_text.png", thresh)
 
@@ -62,19 +59,26 @@ def get_captcha_text():
     return captcha
 
 
-def main():
-    session.get("https://oxware.ru/", headers=headers)
+def get_csrf_token():
+    try:
+        csrf_response = session.get("https://oxware.ru/login.php", headers=headers)
+        logging.info("Получаю CSRF-Токен...")
 
-    csrf_response = session.get("https://oxware.ru/register.php", headers=headers)
-    logging.info("Получаю CSRF-Токен...")
+        csrf_token = re.search(
+            r'name="csrf" value="([a-z0-9]+)"', csrf_response.text
+        ).group(1)
 
-    csrf_token = re.search(
-        r'name="csrf" value="([a-z0-9]+)"', csrf_response.text
-    ).group(1)
-    logging.info(f"CSRF-Токен получен: {csrf_token}")
+        logging.info(f"CSRF-Токен получен: {csrf_token}")
+    except Exception as e:
+        logging.error(f"Произошла ошибка: {e}")
+        exit()
 
+    return csrf_token
+
+
+def register_account():
     data = {
-        "csrf": csrf_token,
+        "csrf": get_csrf_token(),
         "username": username,
         "email": email,
         "password": password,
@@ -83,29 +87,35 @@ def main():
         "captcha": get_captcha_text(),
     }
 
-    response_register = session.post(
-        "https://oxware.ru/register.php", headers=headers, data=data
-    )
+    try:
+        response_register = session.post(
+            "https://oxware.ru/register.php", headers=headers, data=data
+        )
 
-    messages = [
-        "Аккаунт успешно создан! Теперь вы можете войти.",
-        "Пользователь с таким именем или email уже существует",
-        "Имя пользователя должно быть от 3 до 20 символов",
-        "Пароль должен содержать минимум 6 символов",
-        "Имя пользователя может содержать только буквы, цифры и нижнее подчеркивание",
-        "Неверный формат email",
-        "Неверный формат реферального кода",
-        "Неверная капча",
-    ]
+        success_message = "Аккаунт успешно создан! Теперь вы можете войти."
 
-    for message in messages:
-        if message in response_register.text:
-            logging.info(message)
-            break
+        error_messages = [
+            "Пользователь с таким именем или email уже существует",
+            "Имя пользователя должно быть от 3 до 20 символов",
+            "Пароль должен содержать минимум 6 символов",
+            "Имя пользователя может содержать только буквы, цифры и нижнее подчеркивание",
+            "Неверный формат email",
+            "Неверный формат реферального кода",
+            "Неверная капча",
+        ]
+
+        if success_message in response_register.text:
+            logging.info(success_message)
+        else:
+            for message in error_messages:
+                if message in response_register.text:
+                    logging.error(message)
+                    break
+
+    except Exception as e:
+        logging.error(f"Произошла ошибка: {e}")
+        exit()
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        pass
+    register_account()
